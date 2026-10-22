@@ -1,0 +1,75 @@
+---
+title: "Preprocessing"
+author: "William Harris"
+date: "2026-10-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+setwd("C:/Users/Billy/OneDrive/Documents/project_pre")
+```
+
+```{r}
+rating_data <- read.csv("Arena_raw_2026-09-25.csv")
+price_data <- read.csv("OpenRouter_raw_2026-09-28.csv")
+rating_data %>% count(category, sort=TRUE)
+```
+```{r}
+namecleaner <- function(x) {
+  x %>%
+    str_to_lower() %>%
+    str_remove("^[^/]+/") %>%
+   # str_remove(":batch$") %>%
+    str_replace_all("[^a-z0-9]", "")
+}
+rating_data <- mutate(rating_data, modelname = namecleaner(model_name))
+price_data <- mutate(price_data,modelname = namecleaner(id), is_batch = str_ends(id, ":batch"))
+```
+Batch models may not be included when doing actual modeling. 
+```{r}
+overall_ratings <- rating_data %>% filter(category == "overall")
+english_ratings <- rating_data %>% filter(category == "overall")
+non_english_ratings <- rating_data %>% filter(category == "non_english")
+math_ratings <- rating_data %>% filter(category == "math")
+coding_ratings <- rating_data %>% filter(category == "coding")
+lit_ratings <- rating_data %>% filter(category == "creative_writing") 
+```
+I split each rating category into its own dataframe, but if it becomes necessary in the future they can be joined by model name if need be.
+```{r}
+head(rating_data, 5)
+head(price_data,5)
+```
+
+```{r}
+sum(duplicated(rating_data))
+sum(duplicated(price_data))
+sum(duplicated(price_data$id))
+sum(duplicated(overall_ratings$model_name))
+print("====")
+sum(duplicated(overall_ratings$modelname))
+sum(duplicated(price_data$modelname))
+```
+There are no duplicate values in either dataset, and there are no duplicate models in the overall category. 
+```{r}
+sum(is.na(overall_ratings))
+sum(is.na(price_data))
+```
+There are a great deal of columns in price_data that have a bunch of empty entries.
+I got rid of all columns that aren't pricing that contain more than 25% empty values, and then found some remaining
+columns which I did not consider useful for analysis, so I removed them as well. 
+```{r}
+junkcols <- c("canonical_slug", "hugging_face_id", "supported_parameters", 
+                    "default_parameters", "supported_voices", "knowledge_cutoff", 
+                    "expiration_date", "links.details", "benchmarks.design_arena", "pricing.overrides",
+              "alias_target.name", "alias_target.slug","original_json")
+price_red <- price_data[, colMeans(is.na(price_data)) <= 0.25 | grepl("^pricing", names(price_data))] %>% select(-all_of(junkcols))
+price_red
+```
+
+```{r}
+merged <- price_red %>%
+  inner_join(overall_ratings, by = "modelname")
+```
