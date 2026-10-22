@@ -73,3 +73,28 @@ price_red
 merged <- price_red %>%
   inner_join(overall_ratings, by = "modelname")
 ```
+
+```{r}
+hist(merged$pricing.prompt,breaks=30)
+hist(merged$pricing.completion, breaks=30)
+plot(merged$pricing.prompt, merged$pricing.completion)
+plot(merged$rating, merged$rating_upper)
+plot(merged$rating, merged$rating_lower)
+```
+Most models are rather cheap. A few are pricier. 
+```{r}
+plot(log(merged$pricing.prompt), merged$rating)
+plot(log(merged$pricing.completion), merged$rating)
+
+```
+There appears to be a positive correlation between pricing and rating. 
+Completion price appears more correlated with rating than prompt price,
+which makes sense. Completion price represents the price of the actual
+response of the LLM. 
+
+Let's see if it holds up in simple regression. 
+```{r}
+model <- lm(log(pricing.completion) ~ rating, data= merged)
+summary(model)
+```
+The correlation is not very strong, but it is positive and highly significant. 
