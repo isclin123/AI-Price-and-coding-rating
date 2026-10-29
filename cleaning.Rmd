@@ -14,9 +14,12 @@ setwd("C:/Users/Billy/OneDrive/Documents/project_pre")
 
 ```{r}
 rating_data <- read.csv("Arena_raw_2026-09-25.csv")
-price_data <- read.csv("OpenRouter_raw_2026-09-28.csv")
+price_data <- read.csv("OpenRouter_raw_2026-09-28.csv")[-398,]
+#removing row 398 b/c it is the same model on a different mode
+#Will eventually replace this step with a more all-encompassing method
 rating_data %>% count(category, sort=TRUE)
 ```
+
 ```{r}
 namecleaner <- function(x) {
   x %>%
@@ -70,21 +73,39 @@ price_red
 ```
 
 ```{r}
-merged <- price_red %>%
+merged <- price_red %>% inner_join(coding_ratings, by="modelname") 
+overall_merged <- price_red %>%
   inner_join(overall_ratings, by = "modelname")
+reduced_cols <- c("rating",
+  "pricing.prompt",
+  "pricing.completion",
+  "organization",
+  "rating_lower",
+  "rating_upper",
+  "variance",
+  "vote_count",
+  "context_length",
+  "top_provider.max_completion_tokens",
+  "license",
+  "created")
+merged_red <- merged %>% select(all_of(reduced_cols)) %>% mutate(input_price = pricing.prompt*1000000, output_price = pricing.completion*1000000) %>% mutate(mixed_price = ((4*input_price + output_price)/5), log_price = log(mixed_price))
+#log2_price = log2(mixed_price)
+corrplot::corrplot(cor(select(merged_red, c("log_price", "created", "context_length", 
+                             "top_provider.max_completion_tokens", "vote_count"))),method="number")
+
 ```
 
 ```{r}
-hist(merged$pricing.prompt,breaks=30)
-hist(merged$pricing.completion, breaks=30)
-plot(merged$pricing.prompt, merged$pricing.completion)
-plot(merged$rating, merged$rating_upper)
-plot(merged$rating, merged$rating_lower)
+hist(merged_red$pricing.prompt,breaks=30)
+hist(merged_red$pricing.completion, breaks=30)
+plot(merged_red$pricing.prompt, merged$pricing.completion)
 ```
-Most models are rather cheap. A few are pricier. 
+Most models are rather cheap. A few are pricier. Does organization and license
+influence these trends?
 ```{r}
 plot(log(merged$pricing.prompt), merged$rating)
 plot(log(merged$pricing.completion), merged$rating)
+plot(merged_red$log_price, merged_red$rating, )
 
 ```
 There appears to be a positive correlation between pricing and rating. 
@@ -94,7 +115,50 @@ response of the LLM.
 
 Let's see if it holds up in simple regression. 
 ```{r}
-model <- lm(log(pricing.completion) ~ rating, data= merged)
-summary(model)
+model_completion <- lm(log(pricing.completion) ~ rating, data= merged)
+summary(model_completion)
 ```
 The correlation is not very strong, but it is positive and highly significant. 
+
+```{r}
+model_prompt <- lm(log_price ~ rating, data= merged_red)
+summary(model_prompt)
+```
+```{r}
+#Predicting price based on features
+model_mult_price <- lm(log_price ~ rating + created + context_length + top_provider.max_completion_tokens
+                 + vote_count, data = merged_red)
+summary(model_mult_price)
+
+#Predicting rating based on features
+model_mult_rating <- lm(rating ~ log_price + created + context_length + top_provider.max_completion_tokens
+                 + vote_count, data = merged_red)
+summary(model_mult_rating)
+```
+While our model predicts price at only a weak-to-moderate level, using linreg
+to predict rating gives quite successful results. 
+
+From here, it is best to try and incorporate our categoricals. Let's do some
+exploration of them, first:
+```{r}
+ggplot(merged_red, aes(x = reorder(organization, log_price, FUN = mean), 
+                       y = log_price, fill = organization)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Value Distribution Across Groups", x = "Firm", 
+       y = "mixed price (USD per 1M tokens)") +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    legend.position = "none")
+
+ggplot(merged_red, aes(x = reorder(organization, rating, FUN = mean), 
+                       y = rating, fill = organization)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Value Distribution Across Groups", x = "Firm", 
+       y = "rating") +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    legend.position = "none")
+
+```
