@@ -2,15 +2,14 @@
 title: "Preprocessing"
 author: "William Harris"
 date: "2026-10-20"
-output:
-  pdf_document: default
-  html_document: default
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(dplyr)
+library(lme4)
 setwd("C:/Users/Billy/OneDrive/Documents/GitHub/AI-Price-and-coding-rating")
 ```
 
@@ -19,6 +18,7 @@ rating_data <- read.csv("Arena_raw_2026-09-25.csv")
 price_data <- read.csv("OpenRouter_raw_2026-09-28.csv")[-398,]
 #removing row 398 b/c it is the same model on a different mode
 #Will eventually replace this step with a more all-encompassing method
+
 rating_data %>% count(category, sort=TRUE)
 ```
 
@@ -36,7 +36,7 @@ price_data <- mutate(price_data,modelname = namecleaner(id), is_batch = str_ends
 Batch models may not be included when doing actual modeling. 
 ```{r}
 overall_ratings <- rating_data %>% filter(category == "overall")
-english_ratings <- rating_data %>% filter(category == "overall")
+english_ratings <- rating_data %>% filter(category == "english")
 non_english_ratings <- rating_data %>% filter(category == "non_english")
 math_ratings <- rating_data %>% filter(category == "math")
 coding_ratings <- rating_data %>% filter(category == "coding")
@@ -163,4 +163,78 @@ ggplot(merged_red, aes(x = reorder(organization, rating, FUN = mean),
     axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
     legend.position = "none")
 
+```
+Let's create a dataset which only contains models from the major orgs
+```{r}
+merged_red_filtered <- merged_red %>%
+  group_by(organization) %>%
+  filter(n() >= 5) %>%
+  ungroup() 
+
+ggplot(merged_red_filtered, aes(x = reorder(organization, log_price, FUN = mean), 
+                       y = log_price, fill = organization)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Value Distribution Across Groups", x = "Firm", 
+       y = "mixed price (USD per 1M tokens)") +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    legend.position = "none")
+
+ggplot(merged_red_filtered, aes(x = reorder(organization, rating, FUN = mean), 
+                       y = rating, fill = organization)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Value Distribution Across Groups", x = "Firm", 
+       y = "rating") +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+    legend.position = "none")
+```
+Let's make a GMM with this dataset.
+```{r}
+model_data <- merged_red_filtered %>%
+  mutate(
+    organization = factor(organization),
+
+    # Transform heavily right-skewed variables
+    log_context = log1p(context_length),
+    log_max_tokens = log1p(top_provider.max_completion_tokens),
+    log_votes = log1p(vote_count),
+
+    # Convert release timestamp to numeric
+    created_num = as.numeric(created)
+  ) %>%
+  drop_na(
+    log_price,
+    rating,
+    created_num,
+    log_context,
+    log_max_tokens,
+    log_votes,
+    organization
+  ) %>%
+  mutate(
+    rating_z = as.numeric(scale(rating)),
+    created_z = as.numeric(scale(created_num)),
+    log_context_z = as.numeric(scale(log_context)),
+    log_max_tokens_z = as.numeric(scale(log_max_tokens)),
+    log_votes_z = as.numeric(scale(log_votes))
+  )
+```
+
+```{r}
+model_gmm <- lmer(
+  log_price ~
+    rating_z +
+    created_z +
+    log_context_z +
+    log_max_tokens_z +
+    log_votes_z +
+    (1 | organization),
+  data = model_data,
+  REML = TRUE
+)
+
+summary(model_gmm)
 ```
