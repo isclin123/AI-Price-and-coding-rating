@@ -2,14 +2,16 @@
 title: "Preprocessing"
 author: "William Harris"
 date: "2026-10-20"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(dplyr)
-setwd("C:/Users/Billy/OneDrive/Documents/project_pre")
+setwd("C:/Users/Billy/OneDrive/Documents/GitHub/AI-Price-and-coding-rating")
 ```
 
 ```{r}
